@@ -3,3 +3,4 @@
 *.craft-lock.json
 *ui-ux-report.md
 .trust-state/
+.playwright-cli/
