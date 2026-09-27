@@ -1,0 +1,5 @@
+# Backups, rapoarte interne și stare de audit — nu se publică
+*.bak-preaudit-*
+*.craft-lock.json
+*ui-ux-report.md
+.trust-state/
