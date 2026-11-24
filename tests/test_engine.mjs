@@ -18,7 +18,7 @@ function load(src) {
   vm.createContext(ctx);
   vm.runInContext(src + `
     ;globalThis.E = { calcMargin, calcPopularity, calcThresholds, classify, enrichItems,
-      priceIncreaseEffect, flipDistances, borderline, portionsToFlip,
+      priceIncreaseEffect, flipDistances, borderline, portionsToFlip, groupItems, parsePastedMenu, parsePastedNumber, MIN_GROUP,
       BORDER_MARGIN_SHARE, BORDER_SALES_SHARE };`, ctx);
   return ctx.E;
 }
@@ -191,6 +191,77 @@ function suite(E) {
     near(d.marginDelta, 6180 / 380 - 14, 1e-9, 'Δmarjă');
     eq(E.borderline(items[2], d).any, false, 'văcuță');
   });
+  // D. Lipire din Excel / casa de marcat
+  t('D1 numere: virgulă, punct, mii, spații, RON', () => {
+    const P = E.parsePastedNumber;
+    const cases = [['12,5', 12.5], ['12.5', 12.5], ['1.234,50', 1234.5], ['1.234', 1234], ['1 234', 1234],
+      ['35 RON', 35], ['35lei', 35], ['0.125', 0.125], ['0,125', 0.125], ['2.500.000', 2500000], ['120', 120]];
+    for (const [tok, want] of cases) near(P(tok), want, 1e-12, `„${tok}"`);
+    for (const bad of ['', 'abc', '-5', '1,2,3', '12.', '1.23.4', '€5']) if (!Number.isNaN(P(bad))) throw new Error(`„${bad}" ar trebui respins`);
+  });
+  t('D2 tab, antet, coloana de categorie, rânduri goale, CRLF', () => {
+    const txt = '\uFEFFPreparat\tVânzări\tPreț\tCost\tCategorie\r\nSnitel\t120\t35,50\t14\tPrincipale\r\n\r\nSupa\t180\t20\t6\r\n';
+    const r = E.parsePastedMenu(txt);
+    eq(r.headerSkipped, true, 'antet'); eq(r.rows.length, 2, 'rânduri'); eq(r.skipped.length, 0, 'ignorate');
+    eq(r.rows[0].price, 35.5, 'preț'); eq(r.rows[0].category, 'Principale', 'categorie'); eq(r.rows[1].category, '', 'fără categorie');
+  });
+  t('D3 punct și virgulă ca separator', () => {
+    const r = E.parsePastedMenu('Paste;130;30;9\nSomon;65;64;26');
+    eq(r.rows.length, 2, 'rânduri'); eq(r.rows[1].cost, 26, 'cost');
+  });
+  t('D4 rânduri respinse cu motiv (fără separator, cost>preț, zero, text)', () => {
+    const r = E.parsePastedMenu('Paste 130 30 9\nA\t10\t5\t8\nB\t0\t5\t2\nC\tzece\t5\t2\nD\t10\t5\nBun\t10\t5\t2');
+    eq(r.rows.length, 1, 'valide'); eq(r.skipped.length, 5, 'ignorate');
+    eq(r.skipped.map(x => x.line).join(','), '1,2,3,4,5', 'rândurile');
+    if (!/separator|tab/.test(r.skipped[0].reason)) throw new Error('motiv separator: ' + r.skipped[0].reason);
+  });
+  t('D5 doar prima linie e antet; la a doua, text = rând respins', () => {
+    const r = E.parsePastedMenu('x\ty\tz\tw\nAntet2\ta\tb\tc');
+    eq(r.headerSkipped, true, 'antet'); eq(r.skipped.length, 1, 'al doilea respins');
+  });
+  t('D6 fuzz: nu aruncă, fără NaN, rândurile sunt mereu valide', () => {
+    const r = rng(99), chars = ['\t', ';', '\n', ',', '.', ' ', '0', '5', '12', 'a', '-', '1.234,5', 'RON', '\u00a0'];
+    for (let k = 0; k < 3000; k++) {
+      let txt = ''; const n = Math.floor(r() * 40);
+      for (let j = 0; j < n; j++) txt += chars[Math.floor(r() * chars.length)];
+      const res = E.parsePastedMenu(txt);
+      for (const row of res.rows) {
+        if (![row.sales, row.price, row.cost].every(Number.isFinite)) throw new Error('NaN în ' + JSON.stringify(txt));
+        if (!(row.sales > 0 && row.price > 0 && row.cost > 0 && row.cost <= row.price && row.name)) throw new Error('rând invalid din ' + JSON.stringify(txt));
+      }
+    }
+  });
+  t('D7 fișierul de 25+ rânduri: toate citite (limita o pune interfața)', () => {
+    const txt = Array.from({ length: 40 }, (_, k) => `P${k}\t${10 + k}\t20\t8`).join('\n');
+    eq(E.parsePastedMenu(txt).rows.length, 40, 'rânduri');
+  });
+
+  // E. Grupare pe categorii
+  const mk = (cat, n, start = 0) => Array.from({ length: n }, (_, k) => ({ name: `${cat || 'x'}${start + k}`, sales: 10, price: 20, cost: 8, category: cat }));
+  t('E1 fără categorii: un singur grup, nume gol', () => {
+    const g = E.groupItems(mk('', 6)); eq(g.length, 1, 'grupuri'); eq(g[0].name, '', 'nume'); eq(g[0].items.length, 6, 'preparate');
+  });
+  t('E2 două categorii ≥4 + rest → grupuri + Altele', () => {
+    const g = E.groupItems([...mk('Supe', 4), ...mk('Principale', 5), ...mk('Deserturi', 2), ...mk('', 1, 100)]);
+    eq(g.map(x => x.name).join('|'), 'Supe|Principale|Altele', 'nume'); eq(g[2].items.length, 3, 'Altele'); eq(g[2].weak, true, 'slab');
+  });
+  t('E3 majuscule și spații: o singură categorie', () => {
+    const g = E.groupItems([...mk('Supe', 2), ...mk(' supe ', 1, 10), ...mk('SUPE', 1, 20), ...mk('Principale', 4)]);
+    eq(g.map(x => x.name + ':' + x.items.length).join('|'), 'Supe:4|Principale:4', 'grupuri');
+  });
+  t('E4 toate categoriile sub 4: tot meniul într-un grup', () => {
+    const g = E.groupItems([...mk('A', 2), ...mk('B', 3), ...mk('', 1, 50)]);
+    eq(g.length, 1, 'grupuri'); eq(g[0].items.length, 6, 'preparate'); eq(g[0].name, '', 'nume');
+  });
+  t('E5 nicio pierdere: fiecare preparat apare exact o dată (fuzz)', () => {
+    const r = rng(5);
+    for (let k = 0; k < 300; k++) {
+      const items = randomMenu(r).map(i => ({ ...i, category: ['', 'A', 'B', 'a ', 'C'][Math.floor(r() * 5)] }));
+      const g = E.groupItems(items);
+      const names = g.flatMap(x => x.items.map(i => i.name)).sort().join(',');
+      eq(names, items.map(i => i.name).sort().join(','), 'conservare');
+    }
+  });
   return results;
 }
 
@@ -212,6 +283,10 @@ if (runMutants) {
     ['rotunjire în loc de floor la porții', s => s.replace('Math.floor(item.sales * lossShare + 1e-9)', 'Math.round(item.sales * lossShare)')],
     ['media tuturor în loc de a celorlalte', s => s.replace('(weighted - item.margin * item.sales) / rest', 'weighted / T')],
     ['clasificare cu > în loc de ≥', s => s.replace('item.margin     >= thresholds.marginLine', 'item.margin     > thresholds.marginLine')],
+    ['grup valid de la 3 preparate', s => s.replace('const MIN_GROUP = 4;', 'const MIN_GROUP = 3;')],
+    ['categorii sensibile la majuscule', s => s.replace('const k = c.toLowerCase();', 'const k = c;')],
+    ['mii: punctul zecimal citit ca mii', s => s.replace('/^[1-9]\\d{0,2}(\\.\\d{3})+(,\\d+)?$/', '/^\\d{1,3}(\\.\\d{3})+(,\\d+)?$/')],
+    ['cost > preț acceptat la lipire', s => s.replace("if (cost > price) { skipped.push", "if (false) { skipped.push")],
     ['porții fără +1 la coborâre', s => s.replace('Math.floor(-salesDelta + 1e-9) + 1', 'Math.floor(-salesDelta + 1e-9)')],
   ];
   let caught = 0;
