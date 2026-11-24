@@ -4,3 +4,7 @@
 *ui-ux-report.md
 .trust-state/
 .playwright-cli/
+
+# Texte de reclama (interne)
+reclama-*.md
+app.html.bak-preprofit-*

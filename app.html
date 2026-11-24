@@ -6,7 +6,7 @@
   <!-- proof-guard R4 fix, 2026-09-27: default-src 'none' + excepții explicite doar unde aplicația chiar are nevoie.
        Fără script-src/style-src 'unsafe-inline' — hash-ul de mai jos e pe scriptul inline curent; se recalculează
        la orice modificare a lui (vezi app.ui-ux-report.md pentru rețeta de recalcul). -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-FkGu4HGNeMWAuRfAHt5X4v/DpbIjobC/18HcVoFxO6I='; style-src 'unsafe-inline'; font-src data:; base-uri 'none'; form-action 'none'" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-nd6Q/Q6+t2ZhBWyjSKWE0rqyhK6YW+HgmhNn6dd49JQ='; style-src 'unsafe-inline'; font-src data:; base-uri 'none'; form-action 'none'" />
   <title>MenuMix Matrix — Analiză meniu</title>
   <style>
     /* ══════════════════════════════════════════
@@ -630,6 +630,7 @@
     .action-item.muncitor  .action-mark { background: var(--c-muncitor); }
     .action-item.candidat  .action-mark { background: var(--c-candidat); }
     .action-name  { font-size: 14px; font-weight: 700; color: var(--secondary); margin-bottom: 2px; }
+    .action-profit { font-size: 12px; font-weight: 600; color: var(--gray-600); margin-bottom: 4px; }
     .action-text  { font-size: 13px; color: var(--gray-700); line-height: 1.5; }
     .action-tag {
       display: inline-block;
@@ -1461,10 +1462,13 @@
         const name = document.createElement('div');
         name.className = 'action-name';
         name.textContent = item.name;
+        const profit = document.createElement('div');
+        profit.className = 'action-profit';
+        profit.textContent = `Profit brut: ${Math.round(item.margin * item.sales).toLocaleString('ro-RO')} RON/lună (${item.sales} × ${fmtRON(item.margin)})`;
         const text = document.createElement('div');
         text.className = 'action-text';
         text.textContent = ACTION_COPY[cat](item);
-        body.append(tag, name, text);
+        body.append(tag, name, profit, text);
         div.append(mark, body);
         groupDiv.appendChild(div);
       });
