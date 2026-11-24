@@ -6,7 +6,7 @@
   <!-- proof-guard R4 fix, 2026-09-27: default-src 'none' + excepții explicite doar unde aplicația chiar are nevoie.
        Fără script-src/style-src 'unsafe-inline' — hash-ul de mai jos e pe scriptul inline curent; se recalculează
        la orice modificare a lui (vezi app.ui-ux-report.md pentru rețeta de recalcul). -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-nd6Q/Q6+t2ZhBWyjSKWE0rqyhK6YW+HgmhNn6dd49JQ='; style-src 'unsafe-inline'; font-src data:; base-uri 'none'; form-action 'none'" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-me9PSDacUIn3ViclPX2B0N0H1KXwqFoiWI8vpulnAB0='; style-src 'unsafe-inline'; font-src data:; base-uri 'none'; form-action 'none'" />
   <title>MenuMix Matrix — Analiză meniu</title>
   <style>
     /* ══════════════════════════════════════════
@@ -866,8 +866,8 @@
             <tr>
               <th class="col-name">Preparat</th>
               <th class="col-num">Vânzări lunare (buc.)</th>
-              <th class="col-num">Preț vânzare (RON)</th>
-              <th class="col-num">Cost unitar (RON)</th>
+              <th class="col-num">Preț vânzare (RON, fără TVA)</th>
+              <th class="col-num">Cost unitar (RON, fără TVA)</th>
               <th class="col-del"><span class="sr-only">Șterge rândul</span></th>
             </tr>
           </thead>
@@ -897,7 +897,7 @@
         <!-- Matricea SVG -->
         <div class="matrix-card">
           <h3 id="matrixTitle">Matricea meniului tău</h3>
-          <p class="matrix-sub" id="matrixDesc">Fiecare punct e un preparat. Liniile punctate sunt media meniului: dreapta = mai popular, sus = marjă mai mare.</p>
+          <p class="matrix-sub" id="matrixDesc">Fiecare punct e un preparat. Liniile punctate sunt pragurile: dreapta = popularitate peste 70% din cota medie, sus = marjă peste media ponderată cu vânzările.</p>
           <div class="matrix-wrap">
             <svg class="matrix-svg" id="matrixSvg" viewBox="0 0 440 440" xmlns="http://www.w3.org/2000/svg"
               role="group" aria-labelledby="matrixTitle" aria-describedby="matrixDesc">
@@ -978,15 +978,18 @@
     return (sales / totalSales) * 100;
   }
   function calcThresholds(items) {
-    const margins      = items.map(i => i.margin);
-    const popularities = items.map(i => i.popularity);
-    const avgMargin      = margins.reduce((a, b) => a + b, 0) / margins.length;
-    const avgPopularity  = popularities.reduce((a, b) => a + b, 0) / popularities.length;
-    return { avgMargin, avgPopularity };
+    // Metoda clasica (Kasavana-Smith): marja medie ponderata cu vanzarile;
+    // pragul de popularitate = 70% din cota medie (100 / numar preparate).
+    const totalSales = items.reduce((a, i) => a + i.sales, 0);
+    const marginLine = totalSales === 0
+      ? items.reduce((a, i) => a + i.margin, 0) / items.length
+      : items.reduce((a, i) => a + i.margin * i.sales, 0) / totalSales;
+    const popLine = 0.7 * (100 / items.length);
+    return { marginLine, popLine };
   }
   function classify(item, thresholds) {
-    const highMargin = item.margin     >= thresholds.avgMargin;
-    const highPop    = item.popularity >= thresholds.avgPopularity;
+    const highMargin = item.margin     >= thresholds.marginLine;
+    const highPop    = item.popularity >= thresholds.popLine;
     if (highMargin && highPop)  return 'vedeta';
     if (highMargin && !highPop) return 'potential';
     if (!highMargin && highPop) return 'muncitor';
@@ -1031,12 +1034,12 @@
       </td>
       <td class="col-num">
         <input type="number" class="cell-input cell-num" placeholder="ex: 35"
-          aria-label="Preț de vânzare, RON" data-field="price" min="0.01" step="any" />
+          aria-label="Preț de vânzare, RON, fără TVA" data-field="price" min="0.01" step="any" />
         <div class="cell-error" id="err-${id}-price"></div>
       </td>
       <td class="col-num">
         <input type="number" class="cell-input cell-num" placeholder="ex: 14"
-          aria-label="Cost unitar, RON" data-field="cost" min="0.01" step="any" />
+          aria-label="Cost unitar, RON, fără TVA" data-field="cost" min="0.01" step="any" />
         <div class="cell-error" id="err-${id}-cost"></div>
         <div class="cell-warning" id="warn-${id}-cost"></div>
       </td>
@@ -1229,15 +1232,15 @@
     const P    = { l: 44, r: 12, t: 30, b: 40 };        // loc pentru etichetele de axă
     const W    = size - P.l - P.r, H = size - P.t - P.b;
 
-    const [x0, x1] = paddedDomain(classifiedItems.map(i => i.popularity).concat(thresholds.avgPopularity));
-    const [y0, y1] = paddedDomain(classifiedItems.map(i => i.margin).concat(thresholds.avgMargin));
+    const [x0, x1] = paddedDomain(classifiedItems.map(i => i.popularity).concat(thresholds.popLine));
+    const [y0, y1] = paddedDomain(classifiedItems.map(i => i.margin).concat(thresholds.marginLine));
     const sx = v => P.l + (v - x0) / (x1 - x0) * W;
     const sy = v => P.t + (1 - (v - y0) / (y1 - y0)) * H;
 
     // Pragurile se desenează la MEDIE — exact valorile cu care clasifică classify().
     // Înainte, liniile stăteau la mijlocul intervalului min-max, deci un preparat
     // clasificat Vedetă putea apărea desenat în cadranul Potențial.
-    const tx = sx(thresholds.avgPopularity), ty = sy(thresholds.avgMargin);
+    const tx = sx(thresholds.popLine), ty = sy(thresholds.marginLine);
     const left = P.l, right = P.l + W, top = P.t, bottom = P.t + H;
 
     svg.replaceChildren();
@@ -1284,9 +1287,9 @@
     el('line', { x1: left, y1: ty, x2: right, y2: ty, class: 'mx-thresh' });
     el('line', { x1: tx, y1: top, x2: tx, y2: bottom, class: 'mx-thresh' });
     const tmx = Math.min(Math.max(tx, left + 60), right - 60);
-    text(`medie ${fmtPct(thresholds.avgPopularity)}%`, { x: tmx, y: top - 8, 'text-anchor': 'middle',
+    text(`prag ${fmtPct(thresholds.popLine)}%`, { x: tmx, y: top - 8, 'text-anchor': 'middle',
          'font-size': '11', class: 'mx-muted' });
-    text(`medie ${fmtRON(thresholds.avgMargin)} RON`, { x: 0, y: 0, 'text-anchor': 'middle', 'font-size': '11',
+    text(`medie ponderată ${fmtRON(thresholds.marginLine)} RON`, { x: 0, y: 0, 'text-anchor': 'middle', 'font-size': '11',
          class: 'mx-muted', transform: `translate(${left - 10}, ${ty}) rotate(-90)` });
 
     // Titluri de axă
@@ -1403,9 +1406,9 @@
      A7 · Lista acțiuni + bannere emoționale
   ══════════════════════════════════════════════════════════════ */
   const ACTION_COPY = {
-    muncitor:  (i) => `Se vinde bine, dar marja e sub medie. O creștere de 5% ar aduce +${(i.margin * i.sales * 0.05).toFixed(0)} RON/lună la volumul actual. Analizează ajustarea prețului.`,
+    muncitor:  (i) => `Se vinde bine, dar marja e sub media ponderată. O creștere de 5% ar aduce +${(i.margin * i.sales * 0.05).toFixed(0)} RON/lună la volumul actual. Analizează ajustarea prețului.`,
     potential: (i) => `Marjă bună, dar vizibilitate scăzută. Testează poziționarea în meniu sau recomandarea activă de către personal.`,
-    candidat:  (i) => `Vânzări și marjă sub media meniului. Analizează înlocuirea sau eliminarea la următoarea revizuire.`,
+    candidat:  (i) => `Vânzări și marjă sub pragurile meniului. Înainte să-l scoți, verifică de ce e în meniu (opțiune vegetariană, ancoră de preț, preparat pentru copii).`,
     vedeta:    (i) => `Performează excelent pe ambele axe. Păstrează și promovează activ.`,
   };
   const ACTION_TAG   = { vedeta:'Vedetă', potential:'Potențial', muncitor:'Muncitor', candidat:'Candidat la eliminare' };
