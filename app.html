@@ -6,7 +6,7 @@
   <!-- proof-guard R4 fix, 2026-09-27: default-src 'none' + excepții explicite doar unde aplicația chiar are nevoie.
        Fără script-src/style-src 'unsafe-inline' — hash-ul de mai jos e pe scriptul inline curent; se recalculează
        la orice modificare a lui (vezi app.ui-ux-report.md pentru rețeta de recalcul). -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-me9PSDacUIn3ViclPX2B0N0H1KXwqFoiWI8vpulnAB0='; style-src 'unsafe-inline'; font-src data:; base-uri 'none'; form-action 'none'" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-xfceGpGRQ9CprOZ9pyzzGkSr2qshzokS0Smm63fuAJ0='; style-src 'unsafe-inline'; font-src data:; base-uri 'none'; form-action 'none'" />
   <title>MenuMix Matrix — Analiză meniu</title>
   <style>
     /* ══════════════════════════════════════════
@@ -631,6 +631,7 @@
     .action-item.candidat  .action-mark { background: var(--c-candidat); }
     .action-name  { font-size: 14px; font-weight: 700; color: var(--secondary); margin-bottom: 2px; }
     .action-profit { font-size: 12px; font-weight: 600; color: var(--gray-600); margin-bottom: 4px; }
+    .action-border { font-size: 12px; color: var(--gray-700); background: var(--gray-100); border-left: 3px solid var(--warning); padding: 6px 8px; margin-top: 6px; border-radius: 4px; }
     .action-text  { font-size: 13px; color: var(--gray-700); line-height: 1.5; }
     .action-tag {
       display: inline-block;
@@ -1004,6 +1005,53 @@
     }));
   }
 
+  /* ── Creștere de preț: câștig la volum constant + pragul de rentabilitate ──
+     Δp = preț × pct. Profit nou (m + Δp)(s − L) ≥ m·s  ⇔  L ≤ s·Δp / (m + Δp).
+     maxLoss = câte porții pe lună poți pierde fără ca profitul brut să scadă. */
+  function priceIncreaseEffect(item, pct) {
+    const dp = item.price * pct;
+    const gain = dp * item.sales;
+    const lossShare = dp / (item.margin + dp);
+    const maxLoss = Math.floor(item.sales * lossShare + 1e-9);
+    return { dp, gain, lossShare, maxLoss };
+  }
+
+  /* ── Cât trebuie să se schimbe un preparat ca să treacă de un prag ──
+     Marja: pragul e media ponderată și se mută odată cu preparatul, deci punctul de
+     trecere e media ponderată a CELORLALTE preparate (m ≥ prag ⇔ m ≥ media celorlalte).
+     Popularitate: s/(T − s + s) ≥ q, q = 0,7/N  ⇔  s ≥ q·(T − s)/(1 − q).
+     Restul preparatelor rămân neschimbate. null = nu se poate calcula (ceilalți au 0 vânzări). */
+  function flipDistances(item, items) {
+    const T = items.reduce((a, i) => a + i.sales, 0);
+    const rest = T - item.sales;
+    if (!(rest > 0)) return { marginDelta: null, salesDelta: null };
+    const weighted = items.reduce((a, i) => a + i.margin * i.sales, 0);
+    const othersMargin = (weighted - item.margin * item.sales) / rest;
+    const q = 0.7 / items.length;
+    return {
+      marginDelta: othersMargin - item.margin,              // > 0: marja trebuie să crească
+      salesDelta:  q * rest / (1 - q) - item.sales,         // > 0: vânzările trebuie să crească
+    };
+  }
+
+  /* „La limită" = categoria s-ar schimba la o variație mică și obișnuită:
+     marja cu cel mult 5% din preț sau vânzările cu cel mult 10% (variație normală de la o lună la alta). */
+  const BORDER_MARGIN_SHARE = 0.05;
+  const BORDER_SALES_SHARE  = 0.10;
+  function borderline(item, d) {
+    const margin = d.marginDelta !== null && Math.abs(d.marginDelta) <= BORDER_MARGIN_SHARE * item.price;
+    const sales  = d.salesDelta  !== null && Math.abs(d.salesDelta)  <= BORDER_SALES_SHARE  * item.sales;
+    return { margin, sales, any: margin || sales };
+  }
+
+  /* Porții întregi necesare ca să treci pragul de popularitate (classify folosește ≥). */
+  function portionsToFlip(salesDelta) {
+    return salesDelta > 0 ? Math.ceil(salesDelta - 1e-9) : Math.floor(-salesDelta + 1e-9) + 1;
+  }
+
+  const FLIP_MARGIN = { vedeta: 'muncitor', muncitor: 'vedeta', potential: 'candidat', candidat: 'potential' };
+  const FLIP_POP    = { vedeta: 'potential', potential: 'vedeta', muncitor: 'candidat', candidat: 'muncitor' };
+
   /* ══════════════════════════════════════════════════════════════
      A3 · State & Row Management
   ══════════════════════════════════════════════════════════════ */
@@ -1181,7 +1229,7 @@
     // Add button
     const btnAdd = document.getElementById('btnAddRow');
     btnAdd.disabled = count >= MAX_ITEMS;
-    btnAdd.title    = count >= MAX_ITEMS ? 'Limita de 25 preparate asigură o analiză completă în sub 5 minute.' : '';
+    btnAdd.title    = count >= MAX_ITEMS ? 'Limita este de 25 de preparate.' : '';
 
     // Delete buttons
     getRows().forEach(tr => {
@@ -1217,6 +1265,7 @@
 
   const fmtRON = n => n.toLocaleString('ro-RO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const fmtPct = n => n.toLocaleString('ro-RO', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  const fmtInt = n => Math.round(n).toLocaleString('ro-RO');
 
   // Domeniu cu 8% aer pe fiecare parte: punctele extreme nu mai stau lipite de chenar.
   function paddedDomain(values) {
@@ -1406,7 +1455,13 @@
      A7 · Lista acțiuni + bannere emoționale
   ══════════════════════════════════════════════════════════════ */
   const ACTION_COPY = {
-    muncitor:  (i) => `Se vinde bine, dar marja e sub media ponderată. O creștere de 5% ar aduce +${(i.margin * i.sales * 0.05).toFixed(0)} RON/lună la volumul actual. Analizează ajustarea prețului.`,
+    muncitor:  (i) => {
+      const e = priceIncreaseEffect(i, 0.05);
+      const keep = e.maxLoss > 0
+        ? `Profitul nu scade cât timp pierzi cel mult ${fmtInt(e.maxLoss)} porții din ${fmtInt(i.sales)} pe lună (${fmtPct(e.lossShare * 100)}%).`
+        : `La acest volum, orice porție pierdută scade profitul.`;
+      return `Se vinde bine, dar marja e sub media ponderată. +5% la preț (+${fmtRON(e.dp)} RON/porție) aduce +${fmtInt(e.gain)} RON/lună dacă vânzările rămân la fel. ${keep} Analizează ajustarea prețului.`;
+    },
     potential: (i) => `Marjă bună, dar vizibilitate scăzută. Testează poziționarea în meniu sau recomandarea activă de către personal.`,
     candidat:  (i) => `Vânzări și marjă sub pragurile meniului. Înainte să-l scoți, verifică de ce e în meniu (opțiune vegetariană, ancoră de preț, preparat pentru copii).`,
     vedeta:    (i) => `Performează excelent pe ambele axe. Păstrează și promovează activ.`,
@@ -1472,6 +1527,28 @@
         text.className = 'action-text';
         text.textContent = ACTION_COPY[cat](item);
         body.append(tag, name, profit, text);
+        const d = flipDistances(item, classifiedItems);
+        const b = borderline(item, d);
+        if (b.any) {
+          const parts = [];
+          // Fiecare schimbare duce în altă categorie: marja mută pe verticală, vânzările pe orizontală.
+          if (b.margin) {
+            const amt = fmtRON(Math.abs(d.marginDelta));
+            const how = d.marginDelta > 0 ? `marja crește cu cel puțin ${amt} RON` : `marja scade cu mai mult de ${amt} RON`;
+            parts.push(`la „${CAT_LABELS[FLIP_MARGIN[cat]]}” dacă ${how}`);
+          }
+          if (b.sales) {
+            const n = fmtInt(portionsToFlip(d.salesDelta));
+            const how = d.salesDelta > 0 ? `vinzi cu ${n} porții mai mult` : `vinzi cu ${n} porții mai puțin`;
+            parts.push(`la „${CAT_LABELS[FLIP_POP[cat]]}” dacă ${how}`);
+          }
+          const border = document.createElement('div');
+          border.className = 'action-border';
+          const strong = document.createElement('strong');
+          strong.textContent = 'La limită: ';
+          border.append(strong, `ar trece ${parts.join(', sau ')} (restul meniului rămâne la fel). Nu decide doar pe baza categoriei.`);
+          body.appendChild(border);
+        }
         div.append(mark, body);
         groupDiv.appendChild(div);
       });
@@ -1505,7 +1582,11 @@
     document.getElementById('appStatus').textContent =
       `Analiză gata pentru ${classified.length} preparate: ${count('vedeta', 'vedetă', 'vedete')}, ` +
       `${count('potential', 'cu potențial', 'cu potențial')}, ${count('muncitor', 'muncitor', 'muncitori')}, ` +
-      `${count('candidat', 'candidat', 'candidați')} la eliminare.`;
+      `${count('candidat', 'candidat', 'candidați')} la eliminare.` +
+      (() => {
+        const k = classified.filter(i => borderline(i, flipDistances(i, classified)).any).length;
+        return k > 0 ? ` ${k} ${k === 1 ? 'preparat e' : 'preparate sunt'} la limită între categorii.` : '';
+      })();
 
     // Update print header
     const loc  = document.getElementById('locatieNume').value.trim();
