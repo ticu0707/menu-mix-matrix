@@ -6,7 +6,7 @@
   <!-- proof-guard R4 fix, 2026-09-27: default-src 'none' + excepții explicite doar unde aplicația chiar are nevoie.
        Fără script-src/style-src 'unsafe-inline' — hash-ul de mai jos e pe scriptul inline curent; se recalculează
        la orice modificare a lui (vezi app.ui-ux-report.md pentru rețeta de recalcul). -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-Du9SxnQcUVTn7qcgstM5Bp6AeCCYWi+VDj1o4OXVkO8='; style-src 'unsafe-inline'; font-src data:; base-uri 'none'; form-action 'none'" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-JZXSdxzF3oMf5JMOufktFJXT91BKfQivnx7oiSyRnu4='; style-src 'unsafe-inline'; font-src data:; base-uri 'none'; form-action 'none'" />
   <title>MenuMix Matrix — Analiză meniu</title>
   <style>
     /* ══════════════════════════════════════════
@@ -1583,7 +1583,7 @@
     muncitor:  (i) => {
       const e = priceIncreaseEffect(i, 0.05);
       const keep = e.maxLoss > 0
-        ? `Profitul nu scade cât timp pierzi cel mult ${fmtInt(e.maxLoss)} porții din ${fmtInt(i.sales)} pe lună (pragul exact: ${fmtPct(i.sales * e.lossShare)} porții, adică ${fmtPct(e.lossShare * 100)}%).`
+        ? `Profitul nu scade cât timp pierzi cel mult ${fmtInt(e.maxLoss)} porții din ${fmtInt(i.sales)} pe lună (pragul exact: ${fmtRON(i.sales * e.lossShare)} porții, adică ${fmtPct(e.lossShare * 100)}%).`
         : `La acest volum, orice porție pierdută scade profitul.`;
       return `Se vinde bine, dar marja e sub media ponderată. +5% la preț (+${fmtRON(e.dp)} RON/porție) aduce +${fmtInt(e.gain)} RON/lună dacă vânzările rămân la fel. ${keep} Analizează ajustarea prețului.`;
     },

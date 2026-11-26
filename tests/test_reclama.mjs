@@ -3,6 +3,7 @@
 // Pică dacă: se schimbă o cifră în text, se schimbă motorul/exemplul sau reapare formularea ambiguă „8 din 130 (6,7%)".
 import fs from 'node:fs';
 import vm from 'node:vm';
+import crypto from 'node:crypto';
 
 const appFile = process.argv[2] ?? 'app.html';
 const mdFile = process.argv[3] ?? 'reclama-v1.md';
@@ -73,6 +74,13 @@ t('R7 fiecare caption: disclaimer „fără TVA" + „după ingrediente" + „v�
 });
 t('R8 aplicația afișează „pragul exact" (textul din card)', () => {
   ok(html.includes('pragul exact:'), 'app.html nu are formularea nouă');
+});
+
+t('R9 hash-ul CSP din <meta> = hash-ul scriptului inline (altfel scriptul e blocat și aplicația e moartă)', () => {
+  const m = html.match(/<script(?![^>]*src)[^>]*>([\s\S]*?)<\/script>/);
+  ok(m, 'nu găsesc scriptul inline');
+  const h = 'sha256-' + crypto.createHash('sha256').update(m[1]).digest('base64');
+  ok(html.includes(h), `hash lipsește din CSP: ${h}`);
 });
 
 for (const [n, o, m] of out) console.log(`${o ? 'ok  ' : 'FAIL'} ${n}${o ? '' : ' — ' + m}`);
