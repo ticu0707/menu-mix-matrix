@@ -19,7 +19,7 @@ function load(src) {
   vm.runInContext(src + `
     ;globalThis.E = { calcMargin, calcPopularity, calcThresholds, classify, enrichItems,
       priceIncreaseEffect, flipDistances, borderline, portionsToFlip, groupItems, parsePastedMenu, parsePastedNumber, MIN_GROUP,
-      BORDER_MARGIN_SHARE, BORDER_SALES_SHARE };`, ctx);
+      BORDER_MARGIN_SHARE, BORDER_SALES_SHARE, EXAMPLE_PASTE };`, ctx);
   return ctx.E;
 }
 
@@ -262,6 +262,21 @@ function suite(E) {
       eq(names, items.map(i => i.name).sort().join(','), 'conservare');
     }
   });
+
+  // F. Exemplul din reclamă (butonul „Încarcă exemplul din reclamă") = cifrele din voice-over
+  t('F1 exemplul se citește integral: 6 rânduri, 0 ignorate', () => {
+    const r = E.parsePastedMenu(E.EXAMPLE_PASTE);
+    eq(r.rows.length, 6, 'rânduri'); eq(r.skipped.length, 0, 'ignorate');
+  });
+  t('F2 exemplul dă cifrele din reclamă: 2.730, 2.470, 2.530, +195, cel mult 8 porții (8,67 exact)', () => {
+    const { items, cats } = analyze(E, E.parsePastedMenu(E.EXAMPLE_PASTE).rows);
+    const by = n => items.find(i => i.name.startsWith(n));
+    eq(by('Paste').margin * by('Paste').sales, 2730, 'paste'); eq(by('Somon').margin * by('Somon').sales, 2470, 'somon');
+    eq(by('Șnițel').margin * by('Șnițel').sales, 2530, 'șnițel');
+    const e = E.priceIncreaseEffect(by('Paste'), 0.05);
+    near(e.gain, 195, 1e-9, '+195'); eq(e.maxLoss, 8, 'porții'); near(by('Paste').sales * e.lossShare, 8.6667, 1e-3, 'prag exact');
+    eq(cats.join(','), 'muncitor,muncitor,vedeta,muncitor,vedeta,candidat', 'categorii');
+  });
   return results;
 }
 
@@ -287,6 +302,7 @@ if (runMutants) {
     ['categorii sensibile la majuscule', s => s.replace('const k = c.toLowerCase();', 'const k = c;')],
     ['mii: punctul zecimal citit ca mii', s => s.replace('/^[1-9]\\d{0,2}(\\.\\d{3})+(,\\d+)?$/', '/^\\d{1,3}(\\.\\d{3})+(,\\d+)?$/')],
     ['cost > preț acceptat la lipire', s => s.replace("if (cost > price) { skipped.push", "if (false) { skipped.push")],
+    ['exemplu din reclamă cu preț greșit', s => s.replace("carbonara;130;30;9", "carbonara;130;31;9")],
     ['porții fără +1 la coborâre', s => s.replace('Math.floor(-salesDelta + 1e-9) + 1', 'Math.floor(-salesDelta + 1e-9)')],
   ];
   let caught = 0;

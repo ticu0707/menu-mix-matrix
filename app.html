@@ -887,6 +887,7 @@
         <textarea id="pasteArea" aria-label="Date lipite din Excel sau din raportul casei de marcat" spellcheck="false"></textarea>
         <div class="paste-actions">
           <button class="btn-paste" id="btnPaste" type="button">Încarcă în tabel</button>
+          <button class="btn-paste" id="btnExample" type="button">Încarcă exemplul din reclamă</button>
           <span class="paste-msg" id="pasteMsg" role="status"></span>
         </div>
       </details>
@@ -1099,6 +1100,8 @@
      preparatele lui merg în „Altele" împreună cu cele fără categorie. Dacă nicio categorie nu are
      destule preparate, tot meniul rămâne un singur grup (comportamentul vechi), name = ''. */
   const MIN_GROUP = 4;
+  /* Exemplul din reclamă (felurile principale, preț și cost fără TVA): preparat ; vânzări ; preț ; cost. */
+  const EXAMPLE_PASTE = 'Paste carbonara;130;30;9\nȘnițel vienez;110;36;13\nSomon la grătar;65;64;26\nPiept de pui cu legume;90;32;10\nCeafă de porc la grătar;70;40;15\nTochitura moldovenească;60;38;15';
   function groupItems(items) {
     const clean = c => String(c ?? '').trim().replace(/\s+/g, ' ');
     const buckets = new Map();
@@ -1580,7 +1583,7 @@
     muncitor:  (i) => {
       const e = priceIncreaseEffect(i, 0.05);
       const keep = e.maxLoss > 0
-        ? `Profitul nu scade cât timp pierzi cel mult ${fmtInt(e.maxLoss)} porții din ${fmtInt(i.sales)} pe lună (${fmtPct(e.lossShare * 100)}%).`
+        ? `Profitul nu scade cât timp pierzi cel mult ${fmtInt(e.maxLoss)} porții din ${fmtInt(i.sales)} pe lună (pragul exact: ${fmtPct(i.sales * e.lossShare)} porții, adică ${fmtPct(e.lossShare * 100)}%).`
         : `La acest volum, orice porție pierdută scade profitul.`;
       return `Se vinde bine, dar marja e sub media ponderată. +5% la preț (+${fmtRON(e.dp)} RON/porție) aduce +${fmtInt(e.gain)} RON/lună dacă vânzările rămân la fel. ${keep} Analizează ajustarea prețului.`;
     },
@@ -1728,6 +1731,18 @@
     add('La „Muncitor": câștigul din +5% la preț = 5% × preț × vânzări, presupunând vânzări constante. Profitul nu scade dacă pierzi cel mult Δpreț ÷ (marjă + Δpreț) din porții.');
     add('„La limită": arătăm când o schimbare de cel mult 5% din preț la marjă sau de cel mult 10% la vânzări ar muta preparatul în altă categorie, cu restul meniului neschimbat. Cele două procente sunt alese de noi ca variație obișnuită, nu provin dintr-o sursă.');
     if (group.weak) add(`Atenție: grupul are sub ${MIN_GROUP} preparate, deci mediile sunt slabe statistic.`);
+  }
+
+  /* ── Exemplul din reclamă: doar pe tabel gol, ca să nu amestece datele tale cu ale exemplului ── */
+  function loadExample() {
+    const fields = ['name', 'sales', 'price', 'cost', 'category'];
+    const hasData = getRows().some(tr => fields.some(f => tr.querySelector(`[data-field="${f}"]`).value.trim()));
+    if (hasData) {
+      document.getElementById('pasteMsg').textContent = 'Tabelul are deja date. Șterge rândurile, apoi încarcă exemplul.';
+      return;
+    }
+    document.getElementById('pasteArea').value = EXAMPLE_PASTE;
+    pasteIntoTable();
   }
 
   /* ── Lipire din Excel / casa de marcat ── */
@@ -1923,6 +1938,7 @@
     updateUIState();
 
     document.getElementById('btnPaste').addEventListener('click', pasteIntoTable);
+    document.getElementById('btnExample').addEventListener('click', loadExample);
     document.getElementById('groupSelect').addEventListener('change', e => showGroup(Number(e.target.value)));
 
     // Add row button
